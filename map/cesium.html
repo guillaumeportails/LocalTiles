@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no">
+  <title>Hello World!</title>
+  <script src="ThirdParty/Cesium/Build/Cesium/Cesium.js"></script>
+  <!-- script src="NewZealandImageryProvider.js"></script> -->
+  <!-- script src='jquery.js'></script> -->
+  <!-- script src='togeojson.js'></script> -->
+  <style>
+      @import url(ThirdParty/Cesium/Build/Cesium/Widgets/widgets.css);
+      html, body, #cesiumContainer {
+          width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden;
+      }
+      <!--#baseLayerPickerContainer { height: 50%; } -->
+  </style>
+</head>
+<body>
+  <!-- div id="baseLayerPickerContainer"></div> -->
+  <div id="cesiumContainer"></div>
+  <!-- <div id="inspector" class="cesium-viewer-cesiumInspectorContainer"></div> -->
+  <script>
+
+console.log('Cesium at ' + Cesium.buildModuleUrl(''))
+
+var home = new Cesium.Rectangle.fromDegrees(174.08, -41.10, 174.12, -41.08); 
+var nzbounds = new Cesium.Rectangle.fromDegrees(165.16, -52.70, -175.70, -29.17);
+
+
+function createNewZealandImageryProvider(options) {
+	options = defaultValue(options, {});
+
+	var tilingScheme = new WebMercatorTilingScheme({ ellipsoid : options.ellipsoid });
+	var minimumLevel = defaultValue(options.minimumLevel, 0);
+	var maximumLevel = options.maximumLevel;
+	var rectangle    = defaultValue(options.rectangle, nzbound);
+
+	// Check the number of tiles at the minimum level.  If it's more than four,
+	// throw an exception, because starting at the higher minimum
+	// level will cause too many tiles to be downloaded and rendered.
+	var swTile = tilingScheme.positionToTileXY(Rectangle.southwest(rectangle), minimumLevel);
+	var neTile = tilingScheme.positionToTileXY(Rectangle.northeast(rectangle), minimumLevel);
+	var tileCount = (Math.abs(neTile.x - swTile.x) + 1) * (Math.abs(neTile.y - swTile.y) + 1);
+	if (tileCount > 4) {
+		throw new DeveloperError('The rectangle and minimumLevel indicate that there are ' + tileCount + ' tiles at the minimum level. Imagery providers with more than four tiles at the minimum level are not supported.');
+	}
+
+	return new UrlTemplateImageryProvider({
+		url: 'http://nz1.nztopomaps.com/{z}/{x}/{reverseY}.png',
+		proxy: options.proxy,
+		credit: new Credit('NZTopoMap with LINZ data'),
+		tilingScheme: tilingScheme,
+		tileWidth: 256,
+		tileHeight: 256,
+		minimumLevel: minimumLevel,
+		maximumLevel: maximumLevel,
+		rectangle: rectangle
+	});
+}
+
+
+// KO pour nztopomaps :
+// Zoom Levels and Map Source :
+//	13 - 15, NZTopo50
+//	10 - 12, NZTopo250
+//	 6 - 9,  Series 242 1:500,000
+// var mapBounds = new google.maps.LatLngBounds(
+//	LatLng(-52.7, 165.16)
+//	LatLng(-29.17, -175.70)
+// TODO proxy pour servir http://www.nztopomaps.com/noimage.png en dehors de ces bornes ... ou OpenStreetMap
+var tms_nztopomaps = new Cesium.UrlTemplateImageryProvider({
+   url : 'http://nz1.nztopomaps.com/{z}/{x}/{reverseY}.png',
+   credit: '<a href=“http://data.linz.govt.nz”>Sourced from LINZ. CC-BY 3.0</a>',
+   subdomains: '', minimumLevel: 0, maximumLevel: 15,
+   rectangle: nzbounds, hasAlphaChannel: false });    // rectangle plus petit que la carte tue le rendu
+
+// OK pour lINZ :
+var tms_linz = new Cesium.UrlTemplateImageryProvider({
+   url: 'http://tiles-{s}.data-cdn.linz.govt.nz/services;'
+		+ 'key=<yourkey>'
+		+ '/tiles/v4/layer=767/EPSG:3857/{z}/{x}/{y}.png',   	// layer 767=Topo50
+   credit: '<a href=“http://data.linz.govt.nz”>Sourced from LINZ. CC-BY 3.0</a>',
+   subdomains: 'abcd', minimumLevel: 0, maximumLevel: 17,
+   rectangle: nzbounds, hasAlphaChannel: false });
+
+var tms_osm = new Cesium.createOpenStreetMapImageryProvider();
+
+// OK pour local :
+var tms_local = new Cesium.UrlTemplateImageryProvider({
+   url: 'http://localhost:3000/tiles/{z}/{x}/{y}.png',
+   credit: 'OSM, LINZ, et al., CC-BY 3.0',
+   subdomains: '', minimumLevel: 0, maximumLevel: 17,
+   rectangle: nzbounds, hasAlphaChannel: false });
+
+
+
+// TODO: implementer Cesium.ImageryProvider pour servir des NZ dans nzbounds et des OSM ailleurs
+var mixer = new Object;
+mixer.getUrl = function (url) {
+	console.log('proxyMixer ' + url);
+	return url;
+}
+var tms_mixed = new Cesium.UrlTemplateImageryProvider({
+   url: 'http://localhost:3000/tiles/{z}/{x}/{y}.png',
+   credit: 'OMS & LINZ',
+   proxy: mixer,
+   minimumLevel: 0, maximumLevel: 17, hasAlphaChannel: false });
+/***
+tms_mixed.requestImage = function(x, y, level) {
+    // build the actual URL
+	console.log('mixed ' + 'X' + x + 'Y' + y + 'L' + level);
+    var url = 'http://nztopomaps.com/noimage.png';
+    return Cesium.ImageryProvider.loadImage(this, url);		// KO !
+}
+***/
+
+
+	
+// List of base layers : adding to the default ones
+// Le picker par defaut createDefaultImageryProviderViewModels() ne convient pas car il contient
+// les BingMaps avec une cle propre a Cesium
+var imageryBases = Cesium.createDefaultImageryProviderViewModels();
+imageryBases.push(new Cesium.ProviderViewModel({
+     name : 'Land Information New Zealand',
+     iconUrl : 'https://koordinates.a.ssl.fastly.net/media/group/logo/270x150/LINZ_2012_updated_logo_colour.png',
+     tooltip : 'Cf data.linz.govt.nz',
+     creationFunction : function() {
+	     console.log('LINZ provider creation');
+	     return new Cesium.UrlTemplateImageryProvider({
+			url: 'http://tiles-{s}.data-cdn.linz.govt.nz/services;'
+				+ 'key=<yourkey>'
+				+ '/tiles/v4/layer=767/EPSG:3857/{z}/{x}/{y}.png',   	// layer 767=Topo50
+			credit: '<a href=“http://data.linz.govt.nz”>Sourced from LINZ. CC-BY 3.0</a>',
+			subdomains: 'abcd', minimumLevel: 5, maximemLevel: 17,
+			enablePickFeatures: false, rectangle: nzbounds, hasAlphaChannel: false });
+     }
+}));
+imageryBases.push(new Cesium.ProviderViewModel({
+     name : 'NZ TopoMaps',
+     iconUrl : 'nztopomaps-main.png',
+     tooltip : 'New Zealand only',
+     creationFunction : function() {
+	     console.log('NZTopoMaps provider creation');
+	     return new Cesium.UrlTemplateImageryProvider({
+			url : 'http://nz1.nztopomaps.com/{z}/{x}/{reverseY}.png',
+			credit: '<a href=“http://data.linz.govt.nz”>Sourced from LINZ. CC-BY 3.0</a>',
+			subdomains: '',	minimumLevel: 5, maximumLevel: 15,
+			enablePickFeatures: false, rectangle: nzbounds, hasAlphaChannel: false });
+     }
+}));
+imageryBases.push(new Cesium.ProviderViewModel({
+     name : 'OpenTopoMap',
+     iconUrl : 'OpenTopoMap.png',
+     tooltip : 'OpenStreetMap + SRTM',
+     creationFunction : function() {
+	     console.log('OpenTopoMap provider creation');
+	     return new Cesium.UrlTemplateImageryProvider({
+			url : 'http://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+			credit: '&copy; <a href="http://opentopomap.org/credits">OpenTopoMap</a> CC-BY-SA',
+			subdomains: 'abc',	minimumLevel: 0, maximumLevel: 17,   // Available : [1,17]
+			enablePickFeatures: false, hasAlphaChannel: false });
+     }
+}));
+imageryBases.push(new Cesium.ProviderViewModel({
+     name : 'Z,Y,X debugger',
+     iconUrl : '',
+     tooltip : 'Shows tiles coordinates',
+     creationFunction : function() {
+	     return new Cesium.TileCoordinatesImageryProvider({ rectangle: nzbounds });
+     }
+}));
+
+
+Cesium.Camera.DEFAULT_VIEW_RECTANGLE = nzbounds; 
+
+var viewer = new Cesium.Viewer('cesiumContainer', {
+	imageryProvider : tms_local,
+	terrainProvider : new Cesium.CesiumTerrainProvider({
+		          url : 'https://assets.agi.com/stk-terrain/world',
+							requestVertexNormals : true,
+							requestWaterMask : true }),
+	baseLayerPicker : false,		// Si true, imageryProviser est ignore
+	targetFrameRate : 10,			// Reduit la charge CPU du browser
+	shadows         : true,
+	terrainShadows  : Cesium.ShadowMode.ENABLED,
+	homeButton      : true });
+
+/***
+var viewer = new Cesium.Viewer('cesiumContainer', {
+	imageryProviderViewModels: imageryBases,
+	baseLayerPicker: true,		// Si true, imageryProviser est ignore
+	targetFrameRate: 10,		// Reduit la charge CPU du browser
+	animation: false,
+	skyAtmosphere: false,
+	terrainExaggeration: 1.0,
+	timeline: false,
+	homeButton: true });
+***/
+	
+//var cesiumWidget = new Cesium.CesiumWidget('cesiumContainer', { imageryProvider : false });
+//var layers = cesiumWidget.imageryLayers;
+//var baseLayerPicker = new Cesium.BaseLayerPicker('baseLayerPickerContainer', {
+//    globe : cesiumWidget.scene.globe,
+//    imageryProviderViewModels : imageryBases
+//});
+
+// TODO: comment specifier une taille minimale en pixels ?
+viewer.dataSources.add(Cesium.KmlDataSource.load('v34_LowRes.kml', {
+    camera: viewer.scene.camera,
+    canvas: viewer.scene.canvas,
+	clampToGround: true
+}));
+//var dox = jsdom.jsdom(fs.readFileSync('TeAraroaTrail_LowRes.gpx', 'utf8'));
+//viewer.dataSources.add(Cesium.GeoJsonDataSource.load(toGeoJSON.gpx(dox), {
+//    camera: viewer.scene.camera,
+//    canvas: viewer.scene.canvas,
+//	clampToGround: true
+//}));
+
+
+//viewer.camera.setView({
+//  positionCartographic: new Cesium.Cartographic.fromDegrees(174.10287 -41.08985, 36000.0),
+    //heading: 0.0,
+	//pitch: -Cesium.Math.PI_OVER_TWO,
+	//roll: 1.0
+//});
+
+//viewer.screenSpaceEventHandler()
+
+//var layers = viewer.scene.imageryLayers;
+//layers.raise(layers.addImageryProvider (tms_nztopomaps));
+//layers.raise(layers.addImageryProvider (tms_linz));
+
+//for (var i = 0; i < layers.length; i++)
+//{
+//    var layer = layers.get(i);
+//    console.log(  'isBase=' + layer.isBaseLayer()
+//				+ ' show=' + layer.show
+//				+ ' alpha=' + layer.alpha);
+//				+ '   ' + layer.Credit.text);
+//	layer.alpha = (layer.isBaseLayer()) ? 1.0 : 0.5;	
+//}
+
+//tms.alpha = 0.5; 		// 0.0 is transparent.  1.0 is opaque.
+//tms.brightness = 2.0;	// > 1.0 increases brightness.  < 1.0 decreases.
+
+//Add basic drag and drop functionality
+viewer.extend(Cesium.viewerDragDropMixin);
+viewer.dropError.addEventListener(function(dropHandler, name, error) {
+    console.log(error);
+});
+
+// Debug
+//viewer.extend(new Cesium.CesiumInspector('inspectorDiv', viewer.scene);
+viewer.extend(Cesium.viewerCesiumInspectorMixin);
+//viewer.scene.debugShowFramesPerSecond = true;
+
+//var globe = viewer.scene.globe;
+//globe._surface._debug.wireframe = true;
+//globe.maximumScreenSpaceError = 16;
+//globe.enableLighting = true;
+
+
+  </script>
+</body>
+</html>
