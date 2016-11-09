@@ -1,0 +1,238 @@
+<html>
+  <head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="description" content="NZ Topo50 Web Mercator EPSG:3857 demo(Leaflet)" />
+  <link rel="stylesheet" href="http://cdn.leafletjs.com/leaflet-0.7/leaflet.css" />
+  <script src="http://cdn.leafletjs.com/leaflet-0.7.3/leaflet.js"></script>
+  <script src="togeojson.js"></script>  
+  <script src="leaflet.filelayer.js"></script>
+  <script src='//api.tiles.mapbox.com/mapbox.js/plugins/leaflet-omnivore/v0.3.1/leaflet-omnivore.min.js'></script>
+</head>
+
+<body>
+  <div id="map"></div>
+  
+<style>
+html, body, #map {
+ height:100%;
+ padding:0;
+ margin:0;
+}
+</style>
+
+<script>
+// parseUri 1.2.2
+// (c) Steven Levithan <stevenlevithan.com>
+// MIT License
+
+function parseUri (str) {
+	var	o   = parseUri.options,
+		m   = o.parser[o.strictMode ? "strict" : "loose"].exec(str),
+		uri = {},
+		i   = 14;
+	while (i--) uri[o.key[i]] = m[i] || "";
+	uri[o.q.name] = {};
+	uri[o.key[12]].replace(o.q.parser, function ($0, $1, $2) {
+		if ($1) uri[o.q.name][$1] = $2;
+	});
+	return uri;
+};
+
+parseUri.options = {
+	strictMode: false,
+	key: ["source","protocol","authority","userInfo","user","password","host","port","relative","path","directory","file","query","anchor"],
+	q:   { name:   "queryKey", parser: /(?:^|&)([^&=]*)=?([^&]*)/g },
+	parser: {
+		strict: /^(?:([^:\/?#]+):)?(?:\/\/((?:(([^:@]*)(?::([^:@]*))?)?@)?([^:\/?#]*)(?::(\d*))?))?((((?:[^?#\/]*\/)*)([^?#]*))(?:\?([^#]*))?(?:#(.*))?)/,
+		loose:  /^(?:(?![^:@]+:[^:@\/]*@)([^:\/?#.]+):)?(?:\/\/)?((?:(([^:@]*)(?::([^:@]*))?)?@)?([^:\/?#]*)(?::(\d*))?)(((\/(?:[^?#](?![^?#\/]*\.[^?#\/.]+(?:[?#]|$)))*\/?)?([^?#\/]*))(?:\?([^#]*))?(?:#(.*))?)/ }
+};
+
+function parseQuery(qstr) {	// Decoder la partie 'jQuery' d'une URL : "a=...&b=...&..."
+    var query = {};
+    var a = qstr.split('&');
+    for (var i = 0; i < a.length; i++) {
+        var b = a[i].split('=');
+        query[decodeURIComponent(b[0])] = decodeURIComponent(b[1] || '');
+    }
+    return query;
+}
+</script>
+
+<script>
+// Leaflet : carte avec controle libre + layers, KML code dans l'URL
+
+// Layer : pour la NZ uniquement
+//   LayerID: 767=Topo50  
+//   http://www.linz.govt.nz/data/linz-data-service/guides-and-documentation/using-lds-xyz-services-in-leaflet
+var tilesLINZ767 = new L.TileLayer(
+	'http://tiles-{s}.data-cdn.linz.govt.nz/services;'			// tracert = NZ : lent
+		+ 'key=<yourkey>'
+		+ '/tiles/v4/layer=767/EPSG:3857/{z}/{x}/{y}.png', {	// layer 767=Topo50
+	minZoom: 5, maxZoom: 17,
+	subdomains: 'abcd',
+	continuousWorld: true,
+	attribution: '<a href=“http://data.linz.govt.nz”>Sourced from LINZ. CC-BY 3.0</a>'});
+
+// NZ only
+var tilesNztopomaps = new L.TileLayer(
+	'http://nz1.nztopomaps.com/{z}/{x}/{y}.png', {			// tracert = US/CA
+	minZoom: 5, maxZoom: 15,
+	continuousWorld: true,
+	tms: true, // Y inversion
+	attribution: '<a href="http://www.nztopomaps.com">nztopomaps</a>, sourced from'
+				+ ' <a href="http://www.linz.govt.nz/">LINZ</a>.'
+				+ ' <a href=http://creativecommons.org/licenses/by/3.0/nz/CC-BY 3.0">CC-BY 3.0 NZ</a>'	});
+
+var tilesWatercolor = new L.TileLayer(
+	'http://tile.stamen.com/watercolor/{z}/{x}/{y}.jpg',
+	{   maxZoom: 17,
+		attribution: 'Map tiles by <a href="http://stamen.com">Stamen Design</a>,'
+			+ ' under <a href="http://creativecommons.org/licenses/by/3.0">CC BY 3.0</a>.'
+			+ ' Data by <a href="http://openstreetmap.org">OpenStreetMap</a>, under'
+			+ ' <a href="http://creativecommons.org/licenses/by-sa/3.0">CC BY SA</a>.' });
+
+var tilesToner = new L.TileLayer(
+	'http://tile.stamen.com/toner/{z}/{x}/{y}.png',
+	{   maxZoom: 15,
+		attribution: 'Map tiles by <a href="http://stamen.com">Stamen Design</a>,'
+			+ ' under <a href="http://creativecommons.org/licenses/by/3.0">CC BY 3.0</a>.'
+			+ ' Data by <a href="http://openstreetmap.org">OpenStreetMap</a>, under'
+			+ ' <a href="http://www.openstreetmap.org/copyright">ODbL</a>.' });
+
+var tilesOSM = new L.TileLayer(
+	'http://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+	{   maxZoom: 19,
+		subdomains: 'abc',
+		attribution: '&copy; <a href="http://openstreetmap.org">OpenStreetMap</a> contributors,'
+					+ ' <a href="http://creativecommons.org/licenses/by-sa/2.0/">CC-BY-SA</a>' });
+
+var tilesOCM = new L.TileLayer(
+	'http://{s}.tile.opencyclemap.org/cycle/{z}/{x}/{y}.png',
+	{   maxZoom: 19,
+		subdomains: 'ab',
+		attribution: 'Map by <a href="https://www.opencyclemap.org">OpenCycleMap</a>,'
+			+ ' <a href="http://openstreetmap.org">OpenStreetMap</a> contributors' });
+
+var tilesOTM = new L.TileLayer(
+	'http://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',  /* https pour le site OTM uniquement */
+	{   maxZoom: 17,
+		subdomains: 'abc',
+		attribution: '&copy; <a href="http://opentopomap.org/credits">OpenTopoMap</a> CC-BY-SA' });
+
+var tilesLonvia = new L.TileLayer(
+	'http://tile.lonvia.de/hiking/{z}/{x}/{y}.png',
+	//'http://tile.waymarkedtrails.de/hiking/{z}/{x}/{y}.png',  Overlay de tracks
+	{   maxZoom: 17,
+		attribution: 'Lonvia.de CC-BY 3.0' });
+
+// Limite en nombre de tuiles/mois
+var tilesOutdoors = new L.TileLayer(
+	'https://{s}.tile.thunderforest.com/outdoors/{z}/{x}/{y}.png?apikey=<yourkey>',	
+	{   maxZoom: 17,
+		subdomains: 'ab',
+		attribution: 'Maps by <a href="www.thunderforest.com">Thunderforest</a>,'
+			+ ' <a href="http://openstreetmap.org">OpenStreetMap</a> contributors' });
+
+var tilesLocal = new L.TileLayer(
+	'http://localhost:3000/tiles/{z}/{x}/{y}.png',
+	{   maxZoom: 15,
+		subdomains: '',
+		attribution: '&copy; OSM, LINZ, et al., CC-BY-SA' });
+
+	
+var basemaps = {
+	'local'       : tilesLocal,
+	'nztopomaps'  : tilesNztopomaps,
+	'Hike,Bike'   : tilesOCM,
+	'OSM'         : tilesOSM,
+	'OpenTopoMap' : tilesOTM,
+//	'Lonvia'      : tilesLonvia,
+//	'LINZ'        : tilesLINZ,
+	'Outdoors'    : tilesOutdoors,
+	'watercolor'  : tilesWatercolor,
+	'toner'       : tilesToner
+};
+	
+var map = new L.Map('map', {
+  crs: L.CRS.EPSG3857,
+  layers: [tilesLocal, tilesLocal],
+  continuousWorld: true,
+  worldCopyJump: false,
+  zoomControl: true,
+  attributionControl: true
+});
+L.control.layers(basemaps).addTo(map);
+
+// Un onClick => popup
+var popup = L.popup();
+function onMapClick(e) {
+  popup
+    .setLatLng(e.latlng)
+    .setContent("You clicked the map at " + e.latlng.toString() + " zoom=" + map.getZoom())
+    .openOn(map);
+}
+map.on('click', onMapClick);
+
+// Emploi du plugin FileLayer pour charger du KML sur la carte
+var control = L.Control.fileLayerLoad({
+  //Allows you to use a customized version of L.geoJson.
+  //For example if you are using the Proj4Leaflet leaflet plugin,
+  //you can pass L.Proj.geoJson and load the files into the
+  //L.Proj.GeoJson instead of the L.geoJson.
+  layer: L.geoJson,
+  //See http://leafletjs.com/reference.html#geojson-options
+  layerOptions: { style: { color: 'red' } },
+  //Add to map after loading (default: true) ?
+  addToMap: true,
+  //File size limit in kb (default: 1024) ?
+  fileSizeLimit: 4096,
+  //Restrict accepted file formats (default: .geojson, .kml, and .gpx) ?
+  formats: ['.geojson', '.kml', '.gpx']
+}).addTo(map);
+
+control.loader.on('data:loaded', function(e) {
+  //Add to map layer switcher
+  layerswitcher.addOverlay(e.layer, e.filename);
+});
+
+// De base ? CORS violation => Copier d'abord les donnees sur le serveur hebergeant cette page ...
+// Depuis un server Apache, le .htaccess doit contenir une ligne :
+//		Header set Access-Control-Allow-Origin "*"
+// Omnivore contient un support pour CORS ... mais ca ne semble pas marcher
+//omnivore.kml("http://cdn.teararoa.org.nz/userfiles/file/Various/TeAraroaTrail.gpx").addTo(map);
+// Ou:	...gpx").on('ready', function() { map.fitBounds(runLayer.getBounds());)).addTo(map);
+
+function addKml(url) {
+	console.log ("addKml " + url);
+	var runLayer = omnivore.kml(url)
+		.on('ready', function() {
+			map.fitBounds(runLayer.getBounds());
+			runLayer.eachLayer(function(layer) {
+				layer.bindPopup(layer.feature.properties.name);
+			});
+		}).addTo(map);
+}
+
+// Suivre le 'jQuery' demande
+var q = parseUri(document.URL)['query'];
+var lat  = -41.08985;
+var lon  = 174.10287;
+var zoom = 6;
+q = parseQuery(q);
+if ((a = q['c']) != undefined) { v = a.split(","); lat = parseFloat(v[0]); lon = parseFloat(v[1]); }
+if ((a = q['z']) != undefined) { zoom = parseFloat(a); }
+if ((a = q['k']) != undefined) { addKml(decodeURIComponent(a)); }
+if ((a = q['g']) != undefined) { omnivore.gpx(decodeURIComponent(a)).addTo(map); }
+
+/* Afficher la carte */
+console.log ("map.setView " + lat + ' ' + lon + ' ' + zoom);
+map.setView([lat, lon], zoom);
+
+/* TODO
+	cf http://apps.socib.es/Leaflet.TimeDimension/examples/example9.html	
+*/
+
+</script>
+</body>
+</html>
